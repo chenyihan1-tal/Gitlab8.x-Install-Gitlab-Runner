@@ -1,0 +1,51 @@
+stages:
+  - build
+  - notify
+
+variables:
+  REGISTRY_PWD: "username"
+  REGISTRY_USER: "password"
+  REGISTRY: "registry.cn-hangzhou.aliyuncs.com"
+  IMAGE: "registry.cn-hangzhou.aliyuncs.com/namespace/image"
+  QYWX_HOOK: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=key"
+
+build:
+  stage: build
+  before_script:
+    - export TAG=`git rev-parse --short HEAD`
+    - docker login --username=$REGISTRY_USER --password=$REGISTRY_PWD $REGISTRY
+  script:
+    - docker build -t $IMAGE:$TAG .
+    - docker push $IMAGE:$TAG
+    - docker rmi $IMAGE:$TAG
+    - echo 打包成功,镜像：$IMAGE:$TAG
+
+# 构建失败时的通知消息
+notifyFailWeChat:
+  stage: notify
+  script:
+    - export TAG=`git rev-parse --short HEAD`
+    - export COMMIT_MSG=`git log -1 --pretty=format:"%s"`
+    - export COMMIT_AUTHOR=`git log -1 --pretty=format:"%an"`
+    - export COMMIT_INFO=`git log -1 --pretty=format:"%h,%an,%ar:%s"`
+    - export PROJECT_NAME=`dirname \`pwd\` | xargs basename`/`basename \`pwd\``
+    - export PROJECT_URL=http://gitlab.aodianyun.com/$PROJECT_NAME
+    - export COMMIT_URL=$PROJECT_URL/commit/$CI_BUILD_BEFORE_SHA
+    - export COMMIT_REF_URL=$PROJECT_URL/tree/$CI_BUILD_REF_NAME
+    - curl $QYWX_HOOK -H 'Content-Type:application/json' -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"@$COMMIT_AUTHOR <font color=warning>项目构建失败</font>\n>项目名称：[$PROJECT_NAME]($PROJECT_URL)\n>提交日志：[$COMMIT_MSG]($COMMIT_URL)\n>构建分支：[$CI_BUILD_REF_NAME]($COMMIT_REF_URL)\n\"}}"
+  when: on_failure
+
+# 构建成功时的通知消息
+notifySuccessWeChat:
+  stage: notify
+  script:
+    - export TAG=`git rev-parse --short HEAD`
+    - export COMMIT_MSG=`git log -1 --pretty=format:"%s"`
+    - export COMMIT_AUTHOR=`git log -1 --pretty=format:"%an"`
+    - export COMMIT_INFO=`git log -1 --pretty=format:"%h,%an,%ar:%s"`
+    - export PROJECT_NAME=`dirname \`pwd\` | xargs basename`/`basename \`pwd\``
+    - export PROJECT_URL=http://gitlab.aodianyun.com/$PROJECT_NAME
+    - export COMMIT_URL=$PROJECT_URL/commit/$CI_BUILD_BEFORE_SHA
+    - export COMMIT_REF_URL=$PROJECT_URL/tree/$CI_BUILD_REF_NAME
+    - curl $QYWX_HOOK -H 'Content-Type:application/json' -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"@$COMMIT_AUTHOR <font color=info>项目构建成功</font>\n>镜像版本：$IMAGE:$TAG\n>项目名称：[$PROJECT_NAME]($PROJECT_URL)\n>提交日志：[$COMMIT_MSG]($COMMIT_URL)\n>构建分支：[$CI_BUILD_REF_NAME]($COMMIT_REF_URL)\n\"}}"
+  when: on_success
